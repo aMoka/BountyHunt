@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Data;
 using System.Linq;
+using System.Collections.Generic;
 using MySql.Data.MySqlClient;
 using TShockAPI;
 using TShockAPI.DB;
@@ -9,7 +10,7 @@ namespace BountyHunt
 {
 	public class Database
 	{
-		private readonly IDbConnection _db;
+		private static IDbConnection _db;
 
 		public Database(IDbConnection db)
 		{
@@ -38,7 +39,7 @@ namespace BountyHunt
 			{
 				_db.Query("INSERT INTO Bounties (Name, Contractor, Target, Rewards, Hunters, Failures)"
 					+ " VALUES (@0, @1, @2, @3, @4, @5)",
-					bounty.name, bounty.contractor, bounty.target, Utils.TurnRewardsToString(bounty.reward), bounty.hunter, bounty.failures);
+					bounty.name, bounty.contractor, bounty.target, Utils.TurnRewardsToString(bounty.reward), "", "");
 				if (!BH.bounties.Contains(bounty))
 					BH.bounties.Add(bounty);
 			}
@@ -85,11 +86,13 @@ namespace BountyHunt
 			}
 		}
 
-		public void InitialSyncBounties()
+		public static void InitialSyncBounties()
 		{
+			BH.bounties.Clear();
+
 			using (var reader = _db.QueryReader("SELECT * FROM Bounties"))
 			{
-				while (reader.Read())
+				while (reader != null && reader.Read())
 				{
 					var name = reader.Get<string>("Name");
 					var contractor = reader.Get<string>("Contractor");
@@ -97,7 +100,14 @@ namespace BountyHunt
 					var rewards = reader.Get<string>("Rewards");
 					var hunter = reader.Get<string>("Hunter");
 					var failures = reader.Get<string>("Failures");
-					BH.bounties.Add(new Bounty(name, contractor, target, Utils.GetRewardsFromDB(rewards), hunter.Split(',').ToList(), failures.Split(',').ToList()));
+
+					BH.bounties.Add(new Bounty(
+						name, 
+						contractor, 
+						target, 
+						Utils.GetRewardsFromDB(rewards), 
+						(hunter != null) ? hunter.Split(',').ToList() : new List<string> { }, 
+						(failures != null) ? failures.Split(',').ToList() : new List<string> { }));
 				}
 			}
 		}

@@ -16,6 +16,7 @@ namespace BountyHunt
 		public bool BroadcastNewBounty = false;
 		public bool BroadcastHunt = false;
 		public bool BroadcastSuccess = false;
+		public bool AddDeathPenaltyToRewards = true;
 		public Money HunterDeathPenalty = 0;
 		public int MaxHuntersPerBounty = 1;
 		public int MaxBountiesPerHunter = 0;

@@ -25,9 +25,9 @@ namespace BountyHunt
 		public static void InvalidNewBountyUsage(TSPlayer player)
 		{
 			player.SendErrorMessage("Invalid usage! Proper usages:");
-			player.SendErrorMessage("/nb <bounty name> <target>");
-			player.SendErrorMessage("/nb <-setreward> [SEconomy currency amount]");
-			player.SendErrorMessage("/nb <-confirm/-cancel>");
+			player.SendErrorMessage("/nbty <bounty name> <target>");
+			player.SendErrorMessage("/nbty <-setrewards> [SEconomy currency amount]");
+			player.SendErrorMessage("/nbty <-confirm/-cancel>");
 		}
 		#endregion
 
@@ -76,9 +76,9 @@ namespace BountyHunt
 					(rewards[i].prefix == 0) ? "" : TShock.Utils.GetPrefixById(rewards[i].prefix) + " ",
 					TShock.Utils.GetItemById(rewards[i].id).name));
 			}
-			if (rewards[rewards.Count - 1].stack != 0)
+			if (rewards[rewards.Count - 1].money != 0)
 			{
-				lRewards.Add(String.Format("{0} {1}s", 
+				lRewards.Add(String.Format("{0} {1}", 
 					rewards[rewards.Count - 1].money.ToString(),
 					Wolfje.Plugins.SEconomy.Money.CurrencyName));
 			}

@@ -66,7 +66,7 @@ namespace BountyHunt
 		private void OnInitialize(EventArgs args)
 		{
 			#region Commands
-			Commands.ChatCommands.Add(new Command("bh.player.newbounty", NewBounty, "newbounty", "nb")
+			Commands.ChatCommands.Add(new Command("bh.player.newbounty", NewBounty, "newbounty", "nbty")
 			{
 				HelpText = "/newbounty <bounty name/-setreward/-confirm/-cancel> <target/[SEconomy currency amount]>"
 			});
@@ -126,7 +126,7 @@ namespace BountyHunt
 		#region PostInitialize
 		private void PostInitialize(EventArgs args)
 		{
-			dbManager.InitialSyncBounties();
+			Database.InitialSyncBounties();
 		}
 		#endregion
 
@@ -175,14 +175,17 @@ namespace BountyHunt
 					Item item = new Item();
 					item.SetDefaults(netid);
 
-					if (id == 0)
+					Console.WriteLine(String.Join(", ", id, stacks, prefix, netid));
+
+					if (stacks == 0)
 						return;
 
-					player.droppedItems.Add(new BHItem(id, stacks, prefix));
+					player.droppedItems.Add(new BHItem(netid, stacks, prefix));
 					player.TSPlayer.SendInfoMessage("{0} {1}{2} has been added to bounty rewards.", 
 						stacks, 
-						(prefix == 0) ? "" : TShock.Utils.GetPrefixById(prefix) + " ",
+						(prefix == 0) ? "" : TShock.Utils.GetPrefixByIdOrName(prefix.ToString())[0].ToString() + " ",
 						item.name);
+					args.Handled = true;
 				}
 			}
 			#endregion
@@ -241,7 +244,12 @@ namespace BountyHunt
 										}
 										if (bounty.reward[bounty.reward.Count - 1].money != 0)
 										{
-											//transfer money from worldaccount to playeraccount?
+											SEconomyPlugin.Instance.WorldAccount.TransferToAsync(
+												SEconomyPlugin.Instance.GetBankAccount(killer.TSPlayer.UserAccountName), 
+												bounty.reward[bounty.reward.Count - 1].money, 
+												Wolfje.Plugins.SEconomy.Journal.BankAccountTransferOptions.AnnounceToReceiver,
+												String.Format("for the bounty rewards.", bounty.reward[bounty.reward.Count - 1].money),
+												String.Format("BountyHunt: " + "receiving money for reward."));
 										}
 										completedBounties.Add(bounty);
 									}
@@ -270,17 +278,24 @@ namespace BountyHunt
 										{
 											failedBounties.Add(bounty);
 										}
+										if (config.HunterDeathPenalty != 0)
+										{
+											SEconomyPlugin.Instance.GetBankAccount(plr.TSPlayer.UserAccountName).TransferToAsync(
+												SEconomyPlugin.Instance.WorldAccount,
+												config.HunterDeathPenalty,
+												Wolfje.Plugins.SEconomy.Journal.BankAccountTransferOptions.AnnounceToSender,
+												String.Format("dying to your bounty target."),
+												String.Format("BountyHunt: " + "lost money for death on the hunt."));
+											if (config.AddDeathPenaltyToRewards)
+												bounties[bounties.IndexOf(bounty)].reward[bounties[bounties.IndexOf(bounty)].reward.Count].money += config.HunterDeathPenalty;
+										}
 									}
 								}
 								for (int i = 0; i < failedBounties.Count; i++)
 								{
-									plr.TSPlayer.SendErrorMessage("You have failed the {0} bounty {1} times.", failedBounties[i].name, plr.activeBounties[failedBounties[i]]);
+									plr.TSPlayer.SendErrorMessage("You have failed the {0} bounty {1} time(s).", failedBounties[i].name, plr.activeBounties[failedBounties[i]]);
 									plr.TSPlayer.SendErrorMessage("{0} will be removed from your accept bounties, and can no longer be accepted by you.", failedBounties[i]);
-									if (config.HunterDeathPenalty != 0)
-									{
-										//transfer penalty away from hunter
-										plr.TSPlayer.SendInfoMessage("You lost {0} {1} for being killed on the hunt!", config.HunterDeathPenalty.ToString(), Wolfje.Plugins.SEconomy.Money.CurrencyName);
-									}
+									
 									foreach (Bounty bounty in bounties)
 									{
 										if (bounty == failedBounties[i])
@@ -320,26 +335,27 @@ namespace BountyHunt
 				Utils.InvalidNewBountyUsage(args.Player);
 				return;
 			}
-			//var Journalpayment = Wolfje.Plugins.SEconomy.Journal.BankAccountTransferOptions.AnnounceToSender;
-			//var UserSEAccount = SEconomyPlugin.Instance.GetBankAccount(args.Player.UserAccountName);
-			//var playeramount = UserSEAccount.Balance;
+			var UserSEAccount = SEconomyPlugin.Instance.GetBankAccount(args.Player.UserAccountName);
+			var playeramount = UserSEAccount.Balance;
 			var subcmd = args.Parameters[0].ToLower();
 
 			switch (subcmd)
 			{
-				case "-setreward":
+				case "-setrewards":
 					if (!player.listingBounty)
 					{
 						args.Player.SendErrorMessage("You need to start a bounty!");
 						return;
 					}
+					Money money = 0;
 					if (args.Parameters.Count > 1)
 					{
-						if (!Money.TryParse(args.Parameters[1], out player.bountyAmount))
+						if (!Money.TryParse(args.Parameters[1], out money))
 						{
 							Utils.InvalidNewBountyUsage(args.Player);
 							return;
 						}
+						player.bountyAmount = money;
 						args.Player.SendInfoMessage("SEconomy bounty reward set to {0}!", player.bountyAmount.ToString());
 						if (player.listingReward)
 							return;
@@ -353,22 +369,23 @@ namespace BountyHunt
 					args.Player.SendInfoMessage("Drop any reward items for your bounty.");
 					break;
 				case "-confirm":
-					if (player.bountyAmount != 0)
-					{
-						//UserSEAccount.TransferTo(SEconomyPlugin.Instance.WorldAccount, player.bountyAmount, Journalpayment,
-						//	String.Format("{0} has been taken for the bounty rewards.", player.bountyAmount),
-						//	String.Format("BountyHunt: " + "Adding money to reward."));
-						//SEconomyPlugin.Instance.WorldAccount.TransferToAsync(UserSEAccount, player.bountyAmount, Journalpayment,
-						//	String.Format("{0} has been taken for the bounty rewards.", player.bountyAmount),
-						//	String.Format("BountyHunt: " + "Adding money to reward."));
-					}
-					player.droppedItems.Add(new BHItem(0, player.bountyAmount, 0));
-					if (player.droppedItems.Count == 1 && player.droppedItems[0].money == 0)
+					if (player.droppedItems.Count < 1 && player.bountyAmount == 0)
 					{
 						args.Player.SendErrorMessage("A bounty without a reward is no bounty. Specify a reward!");
 						player.droppedItems.Clear();
 						return;
 					}
+					if (player.bountyAmount != 0)
+					{
+						UserSEAccount.TransferToAsync(
+							SEconomyPlugin.Instance.WorldAccount, 
+							player.bountyAmount,
+							Wolfje.Plugins.SEconomy.Journal.BankAccountTransferOptions.AnnounceToSender,
+							String.Format("the bounty rewards."),
+							String.Format("BountyHunt: " + "Adding money to reward."));
+					}
+					Console.WriteLine(player.bountyAmount.ToString());
+					player.droppedItems.Add(new BHItem(0, player.bountyAmount, 0));
 					dbManager.AddNewBounty(new Bounty(
 						player.bountyName, 
 						player.name, 
@@ -386,7 +403,7 @@ namespace BountyHunt
 					}
 					else
 					{
-						args.Player.SendInfoMessage("Bounty ({0}) was listed targeting {2}",
+						args.Player.SendInfoMessage("Bounty ({0}) was listed targeting {1}",
 							player.bountyName,
 							player.bountyTarget);
 						args.Player.SendInfoMessage("with rewards ({0}).", Utils.ItemListToRewardsString(player.droppedItems));
@@ -451,9 +468,9 @@ namespace BountyHunt
 					{
 						player.bountyName = args.Parameters[0];
 						player.bountyTarget = foundplr[0].Name;
-						args.Player.SendInfoMessage("You are now listing a bounty ({0}) targetting {1}.", player.bountyName, player.bountyTarget);
-						args.Player.SendInfoMessage("Type \"/nb -setrewards [optional: SEconomy reward]\" to set rewards,");
-						args.Player.SendInfoMessage("or \"/nb -cancel\" to cancel listing.");
+						args.Player.SendInfoMessage("You are now listing a bounty ({0}) targeting {1}.", player.bountyName, player.bountyTarget);
+						args.Player.SendInfoMessage("Type \"/nbty -setrewards [optional SEconomy reward]\" to set rewards,");
+						args.Player.SendInfoMessage("or \"/nbty -cancel\" to cancel listing.");
 						player.listingBounty = true;
 					}
 					break;
@@ -491,6 +508,11 @@ namespace BountyHunt
 			if (args.Parameters.Count < 2)
 			{
 				Utils.InvalidGenBountyUsage(args.Player);
+				return;
+			}
+			if (!Utils.CheckBountyNameExists(args.Parameters[1]))
+			{
+				args.Player.SendErrorMessage("Invalid bounty!");
 				return;
 			}
 			for (int i = 0; i < bounties.Count; i++)
@@ -532,8 +554,10 @@ namespace BountyHunt
 								args.Player.SendErrorMessage("Abandon another bounty to accept this bounty.");
 								return;
 							}
+							player.activeBounties.Add(bounties[i], 0);
 							bounties[i].hunter.Add(args.Player.Name);
 							dbManager.UpdateHunters(bounties[i]);
+							args.Player.SendSuccessMessage("You have accepted \"{0}.\" Your target is \"{1}.\"", bounties[i].name, bounties[i].target);
 							return;
 						case "-abandon":
 							Bounty btyToRemove = null;
@@ -546,6 +570,7 @@ namespace BountyHunt
 								player.activeBounties.Remove(btyToRemove);
 							bounties[i].hunter.Remove(args.Player.Name);
 							dbManager.UpdateHunters(bounties[i]);
+							args.Player.SendInfoMessage("You have abandoned \"{0}.\"", bounties[i].name);
 							return;
 						default:
 							Utils.InvalidGenBountyUsage(args.Player);
@@ -569,8 +594,9 @@ namespace BountyHunt
 			{
 				if (args.Parameters[0].ToLower() == bounties[i].name.ToLower())
 				{
-					args.Player.SendSuccessMessage("Removed the bounty, {0}, from the listings.", bounties[i].name);
+					args.Player.SendSuccessMessage("Removed {0} from the bounty listings.", bounties[i].name);
 					bounties.RemoveAt(i);
+					dbManager.DeleteBounty(bounties[i]);
 					break;
 				}
 			}
